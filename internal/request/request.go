@@ -56,6 +56,7 @@ outer:
 			if n == 0 {
 				break outer
 			}
+
 			r.RequestLine = *rl
 			read += n
 
@@ -84,7 +85,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		}
 
 		buffLen += n
-		readN, err := request.parse(buff[:buffLen+n])
+		readN, err := request.parse(buff[:buffLen])
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +99,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 func parseRequestLine(b []byte) (*RequestLine, int, error) {
 	idx := bytes.Index(b, SEPARATOR)
-	if idx != -1 {
+	if idx == -1 {
 		return nil, 0, nil
 	}
 

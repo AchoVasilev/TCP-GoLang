@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"httpfromtcp/internal/headers"
 	"httpfromtcp/internal/request"
 	"httpfromtcp/internal/response"
 	"httpfromtcp/internal/server"
@@ -14,6 +16,16 @@ import (
 )
 
 const port = 42069
+
+func toStr(bytes []byte) string {
+	out := ""
+
+	for _, b := range bytes {
+		out += fmt.Sprintf("%02x", b)
+	}
+
+	return out
+}
 
 func respond400() []byte {
 	return []byte(`
@@ -68,7 +80,15 @@ func main() {
 		} else if req.RequestLine.RequestTarget == "/myproblem" {
 			body = respond500()
 			status = response.StatusInternalServerError
-		} else if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/stream/") {
+		} else if req.RequestLine.RequestTarget == "/video" {
+			f, _ := os.ReadFile("assets/vim.mp4")
+			h.Replace("content-type", "video/mp4")
+			h.Replace("content-length", fmt.Sprintf("%d", len(f)))
+
+			w.WriteStatusLine(response.StatusOK)
+			w.WriteHeaders(*h)
+			w.WriteBody(f)
+		} else if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
 			target := req.RequestLine.RequestTarget
 			res, err := http.Get("https://httpbin.org/" + target[len("/httpbin/"):])
 			if err != nil {
@@ -80,8 +100,11 @@ func main() {
 				h.Delete("Content-Length")
 				h.Set("transfer-encoding", "chunked")
 				h.Replace("content-type", "text/plain")
+				h.Set("Trailer", "X-Content-SHA256")
+				h.Set("Trailer", "X-Content-Length")
 				w.WriteHeaders(*h)
 
+				fullBody := []byte{}
 				for {
 					data := make([]byte, 32)
 					n, err := res.Body.Read(data)
@@ -89,12 +112,20 @@ func main() {
 						break
 					}
 
+					fullBody = append(fullBody, data[:n]...)
 					w.WriteBody([]byte(fmt.Sprintf("%x\r\n", n)))
 					w.WriteBody(data[:n])
 					w.WriteBody([]byte("\r\n"))
 				}
 
-				w.WriteBody([]byte("0\r\n\r\n"))
+				w.WriteBody([]byte("0\r\n"))
+				trailer := headers.NewHeaders()
+
+				out := sha256.Sum256(fullBody)
+				trailer.Set("X-Content-SHA256", toStr(out[:]))
+				trailer.Set("X-Content-Length", fmt.Sprintf("%d", len(fullBody)))
+				w.WriteHeaders(*trailer)
+
 				return
 			}
 		}
